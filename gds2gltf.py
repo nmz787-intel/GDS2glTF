@@ -15,7 +15,8 @@ a triangle mesh for each GDSII layer by extruding the polygons to given sizes.
 All units, including the units of the exported file, are the GDSII file's
 user units (often microns).
 """
-
+import argparse # cmd-line parsing helper
+import json # for loading layerstack from file
 import sys # read command-line arguments
 import gdspy # open gds file
 import numpy as np # fast math on lots of points
@@ -27,31 +28,47 @@ import pygltflib
 from pygltflib import BufferFormat
 from pygltflib.validator import validate, summary
 
-def do_main(gdsii_file_path):
+def load_layerstack_from_file(layerstack_filepath):
+    with open(layerstack_filepath) as lsf:
+        json_data = json.load(lsf)
+    layerstack = {}
+    for entry in json_data:
+        layer_type = (entry['layer'], entry['type'])
+        entry['zmax'] = round(entry['zmin'] + entry['thickness'], 5)
+        # entry.pop('thickness')              # used for development to ensure the sky130.layerstack file had same results as the hard-coded layerstack, for diffing
+        # entry.pop('layer')                  # used for development to ensure the sky130.layerstack file had same results as the hard-coded layerstack, for diffing
+        # entry.pop('type')                   # used for development to ensure the sky130.layerstack file had same results as the hard-coded layerstack, for diffing
+        # entry['color'] = entry.pop('color') # used for development to ensure the sky130.layerstack file had same results as the hard-coded layerstack, for diffing
+        layerstack[layer_type] = entry
+    return layerstack
+
+def do_main(gdsii_file_path, layerstack_file_path = None):
     ########## CONFIGURATION (EDIT THIS PART) #####################################
 
     # choose which GDSII layers to use
-
-    layerstack = {    
-        (235,4): {'name':'substrate', 'zmin':-2, 'zmax':0, 'color':[ 0.2, 0.2, 0.2, 1.0]},
-        (64,20): {'name':'nwell', 'zmin':-0.5, 'zmax':0.01, 'color':[ 0.4, 0.4, 0.4, 1.0]},    
-        # (65,44): {'name':'tap', 'zmin':0, 'zmax':0.1, 'color':[ 0.4, 0.4, 0.4, 1.0]},    
-        (65,20): {'name':'diff', 'zmin':-0.12, 'zmax':0.02, 'color':[ 0.9, 0.9, 0.9, 1.0]},    
-        (66,20): {'name':'poly', 'zmin':0, 'zmax':0.18, 'color':[ 0.75, 0.35, 0.46, 1.0]},    
-        (66,44): {'name':'licon', 'zmin':0, 'zmax':0.936, 'color':[ 0.2, 0.2, 0.2, 1.0]},    
-        (67,20): {'name':'li1', 'zmin':0.936, 'zmax':1.136, 'color':[ 1.0, 0.81, 0.55, 1.0]},    
-        (67,44): {'name':'mcon', 'zmin':1.011, 'zmax':1.376, 'color':[ 0.2, 0.2, 0.2, 1.0]},    
-        (68,20): {'name':'met1', 'zmin':1.376, 'zmax':1.736, 'color':[ 0.16, 0.38, 0.83, 1.0]},    
-        (68,44): {'name':'via', 'zmin':1.736,'zmax':2, 'color':[ 0.2, 0.2, 0.2, 1.0]},    
-        (69,20): {'name':'met2', 'zmin':2, 'zmax':2.36, 'color':[ 0.65, 0.75, 0.9, 1.0]},    
-        (69,44): {'name':'via2', 'zmin':2.36, 'zmax':2.786, 'color':[ 0.2, 0.2, 0.2, 1.0]},    
-        (70,20): {'name':'met3', 'zmin':2.786, 'zmax':3.631, 'color':[ 0.2, 0.62, 0.86, 1.0]},    
-        (70,44): {'name':'via3', 'zmin':3.631, 'zmax':4.0211, 'color':[ 0.2, 0.2, 0.2, 1.0]},    
-        (71,20): {'name':'met4', 'zmin':4.0211, 'zmax':4.8661, 'color':[ 0.15, 0.11, 0.38, 1.0]},    
-        (71,44): {'name':'via4', 'zmin':4.8661, 'zmax':5.371, 'color':[ 0.2, 0.2, 0.2, 1.0]},    
-        (72,20): {'name':'met5', 'zmin':5.371, 'zmax':6.6311, 'color':[ 0.4, 0.4, 0.4, 1.0]},
-        # (83,44): { 'zmin':0, 'zmax':0.1, 'name':'text'},
-    }
+    if layerstack_file_path:
+        layerstack = load_layerstack_from_file(layerstack_file_path)
+    else:
+        layerstack = {    
+            (235,4): {'name':'substrate', 'zmin':-2, 'zmax':0, 'color':[ 0.2, 0.2, 0.2, 1.0]}
+            (64,20): {'name':'nwell', 'zmin':-0.5, 'zmax':0.01, 'color':[ 0.4, 0.4, 0.4, 1.0]},
+            # (65,44): {'name':'tap', 'zmin':0, 'zmax':0.1, 'color':[ 0.4, 0.4, 0.4, 1.0]},
+            (65,20): {'name':'diff', 'zmin':-0.12, 'zmax':0.02, 'color':[ 0.9, 0.9, 0.9, 1.0]},
+            (66,20): {'name':'poly', 'zmin':0, 'zmax':0.18, 'color':[ 0.75, 0.35, 0.46, 1.0]},
+            (66,44): {'name':'licon', 'zmin':0, 'zmax':0.936, 'color':[ 0.2, 0.2, 0.2, 1.0]},
+            (67,20): {'name':'li1', 'zmin':0.936, 'zmax':1.136, 'color':[ 1.0, 0.81, 0.55, 1.0]},
+            (67,44): {'name':'mcon', 'zmin':1.011, 'zmax':1.376, 'color':[ 0.2, 0.2, 0.2, 1.0]},
+            (68,20): {'name':'met1', 'zmin':1.376, 'zmax':1.736, 'color':[ 0.16, 0.38, 0.83, 1.0]},
+            (68,44): {'name':'via', 'zmin':1.736,'zmax':2, 'color':[ 0.2, 0.2, 0.2, 1.0]},
+            (69,20): {'name':'met2', 'zmin':2, 'zmax':2.36, 'color':[ 0.65, 0.75, 0.9, 1.0]},
+            (69,44): {'name':'via2', 'zmin':2.36, 'zmax':2.786, 'color':[ 0.2, 0.2, 0.2, 1.0]},
+            (70,20): {'name':'met3', 'zmin':2.786, 'zmax':3.631, 'color':[ 0.2, 0.62, 0.86, 1.0]},
+            (70,44): {'name':'via3', 'zmin':3.631, 'zmax':4.0211, 'color':[ 0.2, 0.2, 0.2, 1.0]},
+            (71,20): {'name':'met4', 'zmin':4.0211, 'zmax':4.8661, 'color':[ 0.15, 0.11, 0.38, 1.0]},
+            (71,44): {'name':'via4', 'zmin':4.8661, 'zmax':5.371, 'color':[ 0.2, 0.2, 0.2, 1.0]},
+            (72,20): {'name':'met5', 'zmin':5.371, 'zmax':6.6311, 'color':[ 0.4, 0.4, 0.4, 1.0]}
+            # (83,44): { 'zmin':0, 'zmax':0.1, 'name':'text'}
+        }
 
     # layerstack = {    
     #     (235,4): {'name':'substrate', 'zmin':-1, 'zmax':0, 'color':[ 0.2, 0.2, 0.2, 1.0]},
@@ -87,7 +104,7 @@ def do_main(gdsii_file_path):
     # See https://gdspy.readthedocs.io/en/stable/index.html for documentation.
     # Second, the boundaries of each shape (polygon or path) are extracted for
     # further processing.
-
+    
     print('Reading GDSII file {}...'.format(gdsii_file_path))
     gdsii = gdspy.GdsLibrary()
     gdsii.read_gds(gdsii_file_path, units='import')
@@ -466,8 +483,10 @@ def do_main(gdsii_file_path):
 
 if __name__ == '__main__':
     # get the input file name
-    if len(sys.argv) < 2: # sys.argv[0] is the name of the program
-        print("Error: need exactly one file as a command line argument.")
-        sys.exit(0)
-    gdsii_file_path = sys.argv[1]
-    do_main(gdsii_file_path)
+    parser = argparse.ArgumentParser(description='Translate GDSII to WebGL for visualization.')
+    parser.add_argument('gdsii_file_path', help='Input GDSII file.', type=str)
+    parser.add_argument('-l', '--layerstack', required=False, help='Optional path to a "layerstack" file.')
+    args = parser.parse_args()
+
+    
+    do_main(args.gdsii_file_path, args.layerstack)
